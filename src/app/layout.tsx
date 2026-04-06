@@ -90,6 +90,9 @@ export default function RootLayout({
                 </div>
               </div>
             </div>
+            <div className="mt-8 pt-4 text-center text-[11px] font-mono tracking-wider" style={{ borderTop: "1px solid var(--border-color)", color: "var(--text-tertiary)" }}>
+              built by mahmut ercan
+            </div>
           </div>
         </footer>
       </body>

@@ -6,6 +6,53 @@ import { notFound } from "next/navigation";
 import { DEPT_LIST, getDeptBySlug } from "@/lib/constants";
 import { ROOT } from "@/lib/paths";
 
+// Ders programından konu→tarih eşleştirmesi
+function buildDateMap(): Map<string, string> {
+  const map = new Map<string, string>();
+  const schedPath = path.join(ROOT, "v-blok-teorik-dersler.md");
+  if (!fs.existsSync(schedPath)) return map;
+
+  const content = fs.readFileSync(schedPath, "utf-8");
+  const lines = content.split("\n");
+  for (const line of lines) {
+    if (!line.startsWith("|") || line.includes("---") || line.includes("Tarih")) continue;
+    const cells = line.split("|").slice(1, -1).map((c) => c.trim());
+    if (cells.length < 6) continue;
+    const rawDate = cells[0]; // "06.04.2026"
+    const topic = cells[4].replace(/\*\*/g, "").toLowerCase();
+    // gg.aa formatı
+    const parts = rawDate.split(".");
+    if (parts.length >= 2) {
+      const ddmm = `${parts[0]}.${parts[1]}`;
+      // İlk eşleşmeyi al (aynı konu birden fazla saatte olabilir)
+      if (!map.has(topic)) {
+        map.set(topic, ddmm);
+      }
+    }
+  }
+  return map;
+}
+
+// Not başlığından ders programı tarihini bul
+const NOTE_TO_TOPIC: [RegExp, string][] = [
+  [/anamnez.*değerlendirme/i, "anamnez ve hasta değerlendirmede genel dahili yaklaşım"],
+  [/sepsis/i, "sepsis"],
+  [/şok|sok/i, "şok"],
+  [/kilo.*kayb|halsizlik/i, "halsizlik ve kilo kaybı olan hastaya yaklaşım"],
+  [/akut böbrek|abh/i, "akut böbrek hasarı"],
+  [/interstisyel|tübülointerstisyel/i, "tübülointerstisyel hastalıklar"],
+  [/asit.?baz/i, "asit-baz dengesi bozuklukları"],
+  [/esansiyel hipertansiyon/i, "esansiyel hipertansiyon"],
+  [/asitli hasta/i, "asitli hastaya dahili yaklaşım"],
+  [/koruyucu hekimlik/i, "koruyucu hekimlik uygulamaları"],
+  [/erişkin aşılama|aşılama/i, "iç hastalıkları pratiğinde erişkin aşılama"],
+  [/ödemli hasta/i, "ödemli hastaya yaklaşım (työ)"],
+  [/beslenme.*1|beslenme.*bölüm 1/i, "malnutrisyon"],
+  [/beslenme.*2|parenteral/i, "malnutrisyon"],
+  [/dahili yoğun bakım|hemodinamik/i, "hemodinamik monitorizasyon"],
+  [/olgu sunumu/i, "vaka tartışması (genel dahiliye)"],
+];
+
 export function generateStaticParams() {
   return DEPT_LIST.map((d) => ({ dept: d.slug }));
 }
@@ -42,6 +89,8 @@ export default async function DeptNotlarPage({
   const dirPath = path.join(ROOT, dept.dir, dept.notlarDir);
   if (!fs.existsSync(dirPath)) notFound();
 
+  const dateMap = buildDateMap();
+
   const files = fs.readdirSync(dirPath).filter((f) => f.endsWith(".md")).sort();
   const notes = files.map((f) => {
     const content = fs.readFileSync(path.join(dirPath, f), "utf-8");
@@ -49,9 +98,18 @@ export default async function DeptNotlarPage({
     const title = firstLine
       ? firstLine.replace(/^#\s*/, "").slice(0, 60)
       : f.replace(/\.md$/, "").replace(/-/g, " ");
-    const lineCount = content.split("\n").length;
     const instructor = extractInstructor(content);
-    return { slug: f.replace(/\.md$/, ""), title, lineCount, instructor };
+
+    // Tarih bul
+    let date: string | null = null;
+    for (const [regex, topicKey] of NOTE_TO_TOPIC) {
+      if (regex.test(title)) {
+        date = dateMap.get(topicKey) || null;
+        break;
+      }
+    }
+
+    return { slug: f.replace(/\.md$/, ""), title, date, instructor };
   });
 
   // Group by instructor
@@ -123,7 +181,9 @@ export default async function DeptNotlarPage({
                     }}
                   >
                     <h3 className="font-medium text-sm z-10 bubble-text">{note.title}</h3>
-                    <span className="text-xs flex-shrink-0 ml-4 z-10 bubble-text-muted">{note.lineCount} satır</span>
+                    {note.date && (
+                      <span className="text-xs flex-shrink-0 ml-4 z-10 bubble-text-muted">{note.date}</span>
+                    )}
                   </Link>
                 ))}
               </div>
